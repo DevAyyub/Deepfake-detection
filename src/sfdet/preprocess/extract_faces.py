@@ -456,9 +456,31 @@ def run_extraction(dataset: str, data_root: str, crops_root: str, cfg: ExtractCo
     if not videos:
         raise SystemExit(f"No videos found for {dataset} under {data_root}. Check the layout.")
 
+    # Resume support. A prior (interrupted) run leaves its completed videos in the log;
+    # read them, skip them, and APPEND new results — so re-running the SAME command
+    # continues where it left off instead of restarting from video 1. A video's log line
+    # is written only after all its crops are saved, so each video is either fully logged
+    # (skip it) or absent (redo it); flushing per line makes that durable across a normal
+    # shutdown / Ctrl+C. To force a clean re-run instead, delete crops_root/<dataset> first.
+    done = set()
+    if log_path.is_file():
+        with open(log_path) as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    done.add(json.loads(line)["video_path"])
+                except (ValueError, KeyError):
+                    continue
+    todo = [v for v in videos if str(v[0]) not in done]
+    n_skip = len(videos) - len(todo)
+    if n_skip:
+        print(f"[{dataset}] resuming: {n_skip} videos already done, {len(todo)} remaining")
+
     n_zero = 0
-    with open(log_path, "w") as logf:
-        for vp, label, subset, vid, mask_vp in tqdm(videos, desc=f"extract {dataset}"):
+    with open(log_path, "a") as logf:
+        for vp, label, subset, vid, mask_vp in tqdm(todo, desc=f"extract {dataset}"):
             rec = extract_video(vp, out_root / LABEL_NAME[label] / vid, extractor, cfg,
                                 mask_video_path=mask_vp)
             n_zero += rec["n_faces"] == 0
@@ -469,7 +491,9 @@ def run_extraction(dataset: str, data_root: str, crops_root: str, cfg: ExtractCo
                 "opened": rec["opened"], "excluded_zero_faces": rec["n_faces"] == 0,
                 "crops": rec["crops"],
             }) + "\n")
-    print(f"[{dataset}] videos={len(videos)}  zero-face(excluded)={n_zero}  log={log_path}")
+            logf.flush()  # durable per-video so a shutdown loses at most the in-progress one
+    print(f"[{dataset}] processed {len(todo)} this run ({n_skip} skipped)  "
+          f"zero-face(excluded)={n_zero}  log={log_path}")
     print(f"   next: python -m sfdet.preprocess.manifest --dataset {dataset} "
           f"--crops-root {crops_root}")
     return log_path
