@@ -98,6 +98,22 @@ def _ci_dir(parent: Path, name: str) -> Path:
 # --------------------------------------------------------------------------- #
 # Source 1 — extraction log (the three video datasets)
 # --------------------------------------------------------------------------- #
+def _portable(stored_path, crops_root, dataset) -> str:
+    """Re-root a crop/mask/landmark path under THIS crops_root so the manifest is
+    portable across machines. The extraction log stores ABSOLUTE paths from the host it
+    ran on (e.g. C:\\...\\crops\\<dataset>\\... on Windows); we keep only the tail at/under
+    the <dataset> folder and re-root it at crops_root. This makes the identical manifest
+    command produce valid paths whether built on the Windows extraction box or the Linux
+    training box (Colab), and normalizes Windows backslashes to the local separator."""
+    if not stored_path:
+        return ""
+    parts = Path(str(stored_path).replace("\\", "/")).parts
+    if dataset in parts:
+        tail = Path(*parts[parts.index(dataset) + 1:])
+        return str(Path(crops_root) / dataset / tail)
+    return str(stored_path)
+
+
 def from_extraction_log(crops_root, dataset) -> list:
     log_path = Path(crops_root) / dataset / "_extraction_log.jsonl"
     if not log_path.is_file():
@@ -119,10 +135,11 @@ def from_extraction_log(crops_root, dataset) -> list:
                 continue
             for c in v["crops"]:
                 rows.append(_row(
-                    c["crop_path"], v["label"], v["dataset"],
+                    _portable(c["crop_path"], crops_root, dataset), v["label"], v["dataset"],
                     subset=v.get("subset", ""), domain=v.get("domain", ""),
                     source_video_id=v["source_video_id"], frame=c.get("frame", ""),
-                    mask_path=c.get("mask_path", ""), landmark_path=c.get("landmark_path", ""),
+                    mask_path=_portable(c.get("mask_path", ""), crops_root, dataset),
+                    landmark_path=_portable(c.get("landmark_path", ""), crops_root, dataset),
                 ))
     print(f"[{dataset}] {len(rows)} crops from {log_path.name} "
           f"({n_excluded} zero-face videos excluded)")
