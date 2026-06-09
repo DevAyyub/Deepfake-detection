@@ -1,0 +1,33 @@
+# configs/model/full.yaml — the FULL dual-branch detector (E1 main model).
+#
+# Spatial (EfficientNet-B4, pretrained) + frequency (FFT-magnitude CNN) joined by a
+# SINGLE-STAGE cross-attention block immediately before the head, so each branch stays
+# modality-pure up to the fusion point (this is what the pre-fusion frequency saliency,
+# C2, depends on). Cross-attention fusion is prior art (SFIAD / Qiao / TSFF-Net) and is
+# here to ENABLE that attribution — it is NOT claimed as architectural novelty.
+#
+# This model's cross-dataset AUC is the headline; the spatial-only arm
+# (model/spatial_only.yaml) is its C1 reference (C1 judged RELATIVELY: full vs
+# spatial-only on the diffusion subsets).
+model:
+  variant: full
+  backbone: efficientnet_b4      # timm-native weights -> ImageNet mean/std (must match the loader)
+  pretrained: true
+  dropout: 0.3                   # head dropout
+  drop_path_rate: 0.1            # mild backbone stochastic depth; helps the FF++ -> cross-dataset gap
+  num_classes: 1                 # single logit -> BCEWithLogitsLoss
+  freq_coords: polar             # (rho, theta) resample -> enables the (rho, theta) saliency. "cartesian" = ablation.
+  freq_radial_coord: true        # append a normalized radius channel to the frequency input
+  head_includes_spatial: false   # fused token only. true -> head also sees GAP(spatial): a strict
+                                 # information-superset of the spatial-only arm (use to argue the C1
+                                 # gap isn't a projection bottleneck).
+  fusion:
+    d_model: 512
+    n_heads: 8
+    ffn_ratio: 4
+    dropout: 0.1
+    n_blocks: 1                  # SINGLE-STAGE (modality purity preserved). n_blocks > 1 = ABL2.
+
+train:
+  optimizer:
+    backbone_lr_mult: 0.1        # pretrained backbone at 0.1x base lr; freq + fusion + head at full lr

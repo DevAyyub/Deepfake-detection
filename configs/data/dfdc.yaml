@@ -1,0 +1,21 @@
+# =============================================================================
+# configs/data/dfdc.yaml
+# DFDC — TEST-ONLY. Conventional lab-deepfake evaluation axis.
+#
+# Dataset descriptor consumed by sfdet.utils.config when an experiment lists this
+# dataset under eval. Never trained on. Root resolved from paths.yaml.
+# =============================================================================
+
+dataset:
+  name: dfdc
+  path_key: dfdc                # -> paths.yaml: dfdc
+  role: test_only               # evaluation only — FF++ c23 is the sole training source
+  axis: lab                     # conventional lab axis (reported alongside Celeb-DF v2)
+  variant: full                 # the FULL DFDC test set — NOT the DFDCP preview subset.
+                                # (Targets in the notes are for full DFDC; keep these
+                                #  distinct so the results row is commensurable.)
+
+  # TODO (with datasets.py / manifest.py): take labels from the DFDC test-set
+  # ground truth (metadata.json / the released test labels), map REAL/FAKE
+  # accordingly, and resolve the crop directory layout from preprocess_faces.py.
+  # Frame/video metrics both come from base.yaml eval (granularity: [frame, video]).

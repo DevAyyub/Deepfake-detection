@@ -1,0 +1,23 @@
+# =============================================================================
+# configs/data/wilddeepfake.yaml
+# WildDeepfake — TEST-ONLY. Real-world, internet-collected evaluation axis.
+#
+# Dataset descriptor consumed by sfdet.utils.config when an experiment lists this
+# dataset under eval. Never trained on. Root resolved from paths.yaml.
+#
+# FRAMING (carry into any prose/results): this is the REAL-WORLD,
+# INTERNET-COLLECTED axis. It is NOT a cross-family or diffusion axis and must
+# never be grouped with the DF40 diffusion subsets in the results table.
+# =============================================================================
+
+dataset:
+  name: wilddeepfake
+  path_key: wilddeepfake        # -> paths.yaml: wilddeepfake
+  role: test_only               # evaluation only — FF++ c23 is the sole training source
+  axis: real_world              # its own axis; reported separately from lab and diffusion
+
+  # TODO (with datasets.py / manifest.py): WildDeepfake ships as real/fake face
+  # sequences (already cropped face frames); resolve the distributed real_test /
+  # fake_test split and label mapping, and confirm whether sequence grouping is
+  # retained (it is what enables video-level reduction here). Frame/video metrics
+  # both come from base.yaml eval (granularity: [frame, video]).

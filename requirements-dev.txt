@@ -1,0 +1,9 @@
+# Dev/test dependencies (the pytest suite + CI). Runtime deps live in
+# requirements.txt; install those + `pip install -e .` for the full env.
+#
+# The logic tests run with just these (no torch): conftest stubs torch when it
+# is absent. To also run the numeric tests (real FFT/transforms), install the
+# real torch stack from requirements.txt in the same environment.
+pytest>=7.4
+numpy==2.2.6
+pyyaml==6.0.3

@@ -1,0 +1,37 @@
+# =============================================================================
+# configs/data/faceforensics_c23.yaml
+# FaceForensics++ (c23) — the ONLY training source for the whole project.
+#
+# This file is a DATASET DESCRIPTOR: it states what FF++ c23 is and how it is
+# laid out. It is consumed by the config loader (sfdet.utils.config) when an
+# experiment selects this dataset. Training hyperparameters (epochs, optimizer,
+# batch size) live in base.yaml's `train:` block, NOT here — base.train selects
+# this dataset and says how to optimise; this descriptor says what the dataset
+# is. The filesystem root is resolved from paths.yaml via `path_key`, so no
+# absolute path enters version control.
+# =============================================================================
+
+dataset:
+  name: faceforensics_c23
+  path_key: faceforensics_c23   # -> paths.yaml: faceforensics_c23
+  role: train                   # TRAIN ONLY. This is the single training distribution.
+  axis: train_source            # NB: not one of the three *evaluation* axes
+                                #     (lab / real_world / diffusion); FF++ is the
+                                #     training distribution, not a results-table row.
+
+  # Standard four-manipulation protocol. This descriptor is authoritative for the
+  # set of manipulations FF++ contains; base.train.manipulations is the selection
+  # used for the run (equal to the full set here). Real class = pristine sequences.
+  compression: c23              # train on c23 ONLY (never c40 / raw for the headline run)
+  manipulations:                # the four fake families of the standard protocol
+    - Deepfakes
+    - Face2Face
+    - FaceSwap
+    - NeuralTextures
+  real_class: original          # FF++ "original"/pristine sequences are the real class
+
+  # TODO (with datasets.py / manifest.py): resolve the per-video crop directory
+  # layout produced by preprocess_faces.py; map {original -> real, each
+  # manipulation -> fake}; and adopt the official FF++ train/val/test video split
+  # (split by identity, no video leakage across splits). Frame sampling count is
+  # data.frames_per_video_train in base.yaml.

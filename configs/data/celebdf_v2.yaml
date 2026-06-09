@@ -1,0 +1,20 @@
+# =============================================================================
+# configs/data/celebdf_v2.yaml
+# Celeb-DF v2 — TEST-ONLY. Conventional lab-deepfake evaluation axis.
+#
+# Dataset descriptor consumed by sfdet.utils.config when an experiment lists this
+# dataset under eval. Never trained on. Root resolved from paths.yaml.
+# =============================================================================
+
+dataset:
+  name: celebdf_v2
+  path_key: celebdf_v2          # -> paths.yaml: celebdf_v2
+  role: test_only               # evaluation only — FF++ c23 is the sole training source
+  axis: lab                     # conventional lab axis (reported alongside DFDC)
+  version: v2                   # Celeb-DF *v2* specifically (not v1)
+
+  # TODO (with datasets.py / manifest.py): use the OFFICIAL Celeb-DF v2 test split
+  # (List_of_testing_videos.txt) — evaluate on that list only, not the full set;
+  # map {Celeb-real, YouTube-real -> real, Celeb-synthesis -> fake}; resolve the
+  # crop directory layout from preprocess_faces.py. Frame/video metrics both come
+  # from base.yaml eval (granularity: [frame, video]).

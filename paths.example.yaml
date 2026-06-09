@@ -1,0 +1,31 @@
+# =============================================================================
+# paths.example.yaml — TEMPLATE. Copy to paths.yaml (gitignored) on each machine
+# and fill in the dataset roots. Datasets are NOT committed; on the remote GPU
+# they are mounted/available at these locations.
+#
+#     cp paths.example.yaml paths.yaml      # then edit paths.yaml
+#
+# sfdet.utils.paths reads paths.yaml and injects these roots into the dataset
+# configs at runtime, so no absolute path ever enters version control.
+# =============================================================================
+
+# --- Training source ---------------------------------------------------------
+faceforensics_c23: /data/FaceForensics++/c23      # standard four-manipulation, c23 (TRAIN ONLY)
+
+# --- Conventional lab evaluation axis ----------------------------------------
+celebdf_v2:        /data/Celeb-DF-v2
+dfdc:              /data/DFDC                       # FULL DFDC (not the DFDCP preview subset)
+
+# --- Real-world / internet-collected evaluation axis -------------------------
+wilddeepfake:      /data/WildDeepfake
+
+# --- Diffusion evaluation axis (TEST-ONLY; pre-extracted crops) --------------
+# Four subsets: Stable Diffusion 2.1, DDPM (pixel-space, NOT DDIM), PixArt-alpha,
+# DiT-XL/2. DF40 ships face crops already, so it is NOT processed by
+# scripts/preprocess_faces.py.
+df40_diffusion:    /data/DF40
+
+# --- Where extract_faces.py WRITES crops for the video datasets above --------
+# (FF++, Celeb-DF v2, DFDC ship as video and need detection+cropping; WildDeepfake
+#  and DF40 ship pre-cropped face images and are consumed in place — not extracted.)
+crops_root:        /data/crops

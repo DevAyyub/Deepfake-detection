@@ -1,0 +1,50 @@
+# =============================================================================
+# requirements-preprocess.txt  —  ISOLATED face-extraction environment
+#
+# Install this in its OWN virtualenv, separate from requirements.txt. It is used
+# ONLY to run the one-time face detection + cropping over the raw videos of the
+# THREE datasets that ship as video: FaceForensics++, Celeb-DF v2, and DFDC.
+# WildDeepfake and DF40 are NOT processed here — both ship pre-extracted face
+# crops and are consumed in place (only resized at load).
+#
+#     python -m venv .venv-preprocess
+#     source .venv-preprocess/bin/activate
+#     pip install -r requirements-preprocess.txt
+#     # then download the 81-landmark model (see below), then:
+#     python scripts/preprocess_faces.py --dataset faceforensics_c23
+#
+# WHY THIS STACK: extraction REPLICATES DeepfakeBench's pipeline so the crops are
+# byte-comparable to the DF40 crops (made by that exact pipeline) and to the 256^2
+# baselines — dlib HOG detector + the 81-landmark predictor, a skimage similarity
+# transform to the ArcFace 5-point template (scale 1.3), cv2.warpAffine (bilinear,
+# black border), output 256x256. See sfdet/preprocess/extract_faces.py.
+#
+# WHY STILL ISOLATED: dlib + scikit-image are only needed for this one-time job and
+# don't belong in the training/eval env. (Note: unlike the old MTCNN/facenet-pytorch
+# choice, this stack has NO numpy<2 / torch<2.3 constraint, so versions match the
+# main env — the isolation is now about keeping deps lean, not resolving a conflict.)
+#
+# WHY dlib-bin (NOT dlib): plain `dlib` on PyPI is source-only at EVERY current
+# version (all 19.24.x and all 20.x are sdist), so `pip install dlib` compiles from
+# scratch on every machine (CMake + a C++ toolchain; minutes, and a frequent failure
+# point on a fresh Colab runtime). `dlib-bin` is a drop-in PREBUILT-WHEEL build of
+# the same library — `import dlib` is unchanged, so extract_faces.py needs no edits —
+# with manylinux + musllinux wheels (cp310–cp314, x86_64 + aarch64). No build.
+#   Fallbacks if no dlib-bin wheel matches your platform/Python:
+#     * dlib-bin==19.24.6   (widest wheel coverage: cp37–cp313, more platforms)
+#     * conda install -c conda-forge dlib   (prebuilt binary via conda)
+#     * pip install dlib    (source build; then also: apt-get install build-essential cmake)
+#
+# REQUIRED MODEL FILE (not a pip package): download
+#   shape_predictor_81_face_landmarks.dat
+# and place it at  dlib_tools/shape_predictor_81_face_landmarks.dat  (path set by
+# preprocess.predictor_path in configs/base.yaml). DeepfakeBench links this file;
+# it is the 81-landmark predictor (NOT the standard 68-landmark dlib model).
+# =============================================================================
+
+dlib-bin==20.0.1                   # prebuilt-wheel build of dlib (import dlib unchanged); no source build
+scikit-image==0.25.2               # transform.SimilarityTransform — same alignment math as DeepfakeBench
+opencv-python-headless==4.13.0.92  # warpAffine / resize / video IO (headless; matches main env)
+numpy==2.2.6                       # matches the training env (no numpy<2 constraint)
+pyyaml==6.0.3                      # read configs/base.yaml + paths.yaml in scripts/preprocess_faces.py
+tqdm==4.67.3

@@ -1,0 +1,60 @@
+# =============================================================================
+# requirements.txt  —  TRAINING / EVALUATION / MODEL environment
+#
+# Face EXTRACTION dependencies are deliberately NOT here. They live in
+# requirements-preprocess.txt and are meant to be installed in a SEPARATE,
+# isolated environment (see README, "Why two requirements files"). Reason:
+# facenet-pytorch hard-pins torch<2.3 / numpy<2.0, which would drag this whole
+# stack back to early-2024 versions; extraction is a one-time job over raw
+# videos and does not need the same torch as training.
+#
+# Install (fresh remote / local CPU dev):
+#     pip install -r requirements.txt
+#     pip install -e .                 # editable install of the `sfdet` package
+#
+# CUDA note: on Linux/Colab the default PyPI `torch` wheel is already a CUDA
+# (cu12x) build, so the lines below install GPU torch as-is. If you need a
+# specific CUDA tag (driver mismatch) or a CPU/Windows build, install torch +
+# torchvision FIRST from the PyTorch index, then run the line above:
+#     https://pytorch.org/get-started/locally/
+# Versions are pinned for reproducibility; bump torch/torchvision together to
+# match your Colab runtime if you ever hit a driver/CUDA mismatch.
+# =============================================================================
+
+# --- Core deep learning -------------------------------------------------------
+torch==2.9.0                       # paired with torchvision 0.24.x — do NOT mix minor versions
+torchvision==0.24.0
+timm==1.0.27                       # EfficientNet-B4 (ImageNet-pretrained) + feature extraction
+                                   # (timm's create_model/feature hooks make the PRE-FUSION
+                                   #  frequency-saliency target layer clean to expose later)
+
+# --- Numerics & I/O -----------------------------------------------------------
+numpy==2.2.6                       # numpy 2.x — fine with current torch/opencv/sklearn/scipy
+scipy==1.15.3                      # spectral utilities (radial/angular (rho,theta) binning helpers)
+opencv-python-headless==4.13.0.92  # HEADLESS build (no GUI/X deps) — correct for servers/Colab.
+                                   # Do not also install opencv-python; two cv2 builds clash.
+Pillow==11.3.0
+pandas==2.3.3                      # results tables (pinned <3 to avoid pandas 3.0 API churn)
+
+# --- Metrics ------------------------------------------------------------------
+scikit-learn==1.8.0                # AUC-ROC (the ANCHOR metric) + accuracy; EER derived from the ROC
+
+# --- Augmentation (spatial branch only; kept OFF the FFT-magnitude input) ------
+albumentations==2.0.8              # pulls opencv-python-headless (consistent with the pin above)
+
+# --- Baseline support ---------------------------------------------------------
+open-clip-torch==3.3.0             # E2 baseline only: frozen CLIP ViT-L/14 + linear probe (Ojha-LC).
+                                   # torch-lenient (>=2.0); safe to keep here. Baseline code lands later.
+
+# --- Model plumbing / config / logging ----------------------------------------
+einops==0.8.2                      # readable tensor ops for the cross-attention fusion module
+pyyaml==6.0.3                      # YAML config system (base <- data <- model <- experiment)
+tqdm==4.67.3
+matplotlib==3.10.9                 # saliency / spectrum figures
+tensorboard==2.20.0                # training curves (runs/ is gitignored)
+
+# NOTE: no `grad-cam` package. pytorch-grad-cam declares `opencv-python` (the GUI
+# build), which would clash with opencv-python-headless above; and the binding
+# invariant requires a CUSTOM hook on a PRE-FUSION frequency-branch layer plus a
+# custom (rho,theta) frequency-saliency map, so Grad-CAM is hand-rolled in
+# src/sfdet/explain/ rather than taken from a library. See README.

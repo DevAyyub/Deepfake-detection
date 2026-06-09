@@ -1,0 +1,28 @@
+# configs/model/fusion_multistage.yaml — ABL2: multi-stage cross-attention fusion.
+#
+# Identical to full.yaml except the cross-attention block is stacked (n_blocks > 1).
+# Tests whether deeper fusion helps classification — at the cost of the single-stage
+# modality purity the pre-fusion saliency relies on. So this is a CONTROLLED deviation,
+# reported as an ablation, never the main model. (The frequency saliency tap is still
+# pre-fusion and still valid as a diagnostic here, but the "modality-pure up to fusion"
+# framing weakens as blocks stack — note that when reporting.)
+model:
+  variant: full
+  backbone: efficientnet_b4
+  pretrained: true
+  dropout: 0.3
+  drop_path_rate: 0.1
+  num_classes: 1
+  freq_coords: polar
+  freq_radial_coord: true
+  head_includes_spatial: false
+  fusion:
+    d_model: 512
+    n_heads: 8
+    ffn_ratio: 4
+    dropout: 0.1
+    n_blocks: 4                  # MULTI-STAGE (ABL2) — stack of 4 cross-attention blocks
+
+train:
+  optimizer:
+    backbone_lr_mult: 0.1

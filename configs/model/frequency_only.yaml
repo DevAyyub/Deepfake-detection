@@ -1,0 +1,14 @@
+# configs/model/frequency_only.yaml — ABL3: the frequency branch ALONE.
+#
+# FFT-magnitude CNN + a single linear head; no spatial branch, no fusion. Isolates how
+# much the spectrum alone carries on each test set. Read together with spatial_only and
+# full, it triangulates what fusion actually adds (and bounds how much of the dual
+# model's diffusion-subset performance is spectral).
+model:
+  variant: frequency_only
+  dropout: 0.3
+  num_classes: 1
+  freq_coords: polar             # "cartesian" = a further ablation of the frequency front end
+  freq_radial_coord: true
+  # No pretrained params here, so backbone_lr_mult does not apply — the base lr (2e-4)
+  # trains the whole (from-scratch) branch.

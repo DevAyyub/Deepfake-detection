@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sfdet"
+version = "0.1.0"
+description = "Explainable cross-dataset deepfake detection: a dual spatial-frequency encoder with integrated frequency saliency."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "Proprietary — research use" }
+authors = [{ name = "Project author" }]
+
+# Runtime dependencies are pinned in requirements.txt (the single source of
+# truth for the training/eval environment), kept OUT of here so the CUDA torch
+# build can be installed via the PyTorch index when needed. Set up with:
+#     pip install -r requirements.txt
+#     pip install -e .
+dependencies = []
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+sfdet = ["py.typed"]
+
+[tool.pytest.ini_options]
+# src-layout: make `sfdet` importable without an editable install (handy for CI).
+pythonpath = ["src"]
+testpaths = ["tests"]
+addopts = "-q"

@@ -1,0 +1,72 @@
+# =============================================================================
+# configs/data/df40_diffusion.yaml
+# DF40 diffusion subsets — TEST-ONLY. Pre-extracted crops. Diffusion eval axis.
+#
+# Dataset descriptor consumed by sfdet.utils.config when an experiment lists this
+# dataset under eval. Root resolved from paths.yaml.
+#
+# HARD CONSTRAINTS:
+#  * NEVER train on DF40 — FF++ c23 is the only training source.
+#  * DF40 ships face crops already, so it is NOT processed by preprocess_faces.py.
+#  * The four subsets are reported SEPARATELY (per-subset AUC is the artifact the
+#    cross-family evaluation reports); do not average them into a single cell in
+#    place of the per-subset numbers.
+#
+# FRAMING (carry into any prose): describe subset differences as a mixture of
+# shared and distinct spectral signatures whose balance tracks how much
+# convolutional upsampling sits in the generation path — NOT as a latent-vs-pixel
+# split and NOT as qualitatively different mechanisms.
+# =============================================================================
+
+dataset:
+  name: df40_diffusion
+  path_key: df40_diffusion      # -> paths.yaml: df40_diffusion
+  role: test_only               # evaluation only
+  axis: diffusion               # its own axis; reported separately from lab and real_world
+  preextracted_crops: true      # crops shipped with DF40 — skip preprocess_faces.py
+
+  # Each subset is reported on its own row. `name` is the conceptual label used in
+  # the results table (matches the DF40 paper's EFS method table); `folder` is the
+  # ACTUAL on-disk directory under the DF40 root — which does NOT always match the
+  # name. The loader must key off `folder` for paths and `name` for reporting.
+  subsets:
+    - name: stable_diffusion_2_1  # SD-2.1, DF40 method #28 (latent diffusion; conv VAE-decoder upsampling)
+      folder: sd2.1
+    - name: ddpm                  # DF40 method #29. PIXEL-space DDPM (conv U-Net), NOT the DDIM sampler.
+      folder: ddim                # ⚠ The on-disk folder is literally named `ddim`. There is NO `ddpm/`
+                                  #   folder; DF40's released dir for its "DDPM" method is `ddim/`
+                                  #   (its own paper table calls #29 DDPM). Do not "correct" this to ddpm.
+    - name: pixart_alpha          # PixArt-alpha, DF40 method #31 (transformer denoiser; VAE-decoder upsampling)
+      folder: PixArt
+    - name: dit_xl_2              # DiT-XL/2, DF40 method #32 (transformer denoiser; VAE-decoder upsampling)
+      folder: DiT
+
+  # DF40 ships FAKE images only; the REAL class is a SEPARATE download. Each subset
+  # folder contains `ff/` and `cdf/` sub-domains (faces synthesized in the FF++ vs
+  # Celeb-DF domain).
+  domain: [ff, cdf]             # DECISION (OPEN): which DF40 sub-domain(s) to evaluate.
+                                # Options: [ff] (domain-matched to FF++ training), [cdf], or
+                                # [ff, cdf] (use all available — current non-committal default).
+                                # Narrow this once decided; pair each with its real source below.
+  real_source:                  # real class for the diffusion test (DF40 provides these separately)
+    ff: faceforensics_real      #   FF++ real crops (DF40 download link)
+    cdf: celebdf_real           #   Celeb-DF real crops (DF40 download link)
+
+  # CROP-SIZE POLICY (recorded decision): all datasets are resized to
+  # base.image_size (256) at load with ONE fixed interpolation. 256 was chosen to
+  # MATCH DF40 / DeepfakeBench's native 256^2 crops, so DF40 needs no resampling at
+  # all; the FF++/Celeb-DF/DFDC extractor outputs 256^2 (crop_size=256) and
+  # WildDeepfake is resized to 256 at load. This keeps one resize/interpolation
+  # history end-to-end so the FFT spectra stay comparable across datasets (§1.8).
+  # EfficientNet-B4's nominal 380 input is deliberately NOT used — B4 runs at 256
+  # via adaptive pooling, and cross-dataset resampling consistency wins over B4's
+  # native resolution. (Alternative if ever revisited: a different base.image_size,
+  # which is a global change, not a per-dataset one.)
+
+  # TODO (with datasets.py / manifest.py): build the manifest as
+  # <root>/<folder>/<domain>/... for fake + the matching real_source for real;
+  # confirm whether crops retain source-video grouping. If they do not, video-level
+  # reduction is undefined for DF40 and only the frame-level row is reportable —
+  # flag that explicitly rather than emitting a meaningless video number. (Ties into
+  # the open frame-vs-video decision in experiments/README.md.) DF40 also ships JSON
+  # path files that can seed this instead of walking the tree.

@@ -1,0 +1,143 @@
+# =============================================================================
+# configs/base.yaml — shared defaults.
+#
+# The config system layers files in this order (later overrides earlier):
+#   base.yaml  <-  configs/data/<dataset>.yaml  <-  configs/model/<variant>.yaml
+#              <-  configs/experiment/<E#>.yaml
+# Ablations are selected by swapping the model/ file (e.g. spatial_only.yaml),
+# so no code changes are needed to toggle a variant.
+#
+# Dataset filesystem roots are NEVER stored here. They are resolved at runtime
+# from paths.yaml (copy paths.example.yaml -> paths.yaml; gitignored) via
+# sfdet.utils.paths, so absolute paths and machine-specific layout stay out of
+# version control.
+# =============================================================================
+
+seed: 1337
+device: cuda
+paths_file: paths.yaml          # resolved relative to repo root by sfdet.utils.paths
+
+# -----------------------------------------------------------------------------
+# Data / inputs
+# -----------------------------------------------------------------------------
+data:
+  image_size: 256               # Match DF40 / DeepfakeBench (their crops are 256^2;
+                                # verified from the DeepfakeBench paper + preprocess.py).
+                                # Chosen over EfficientNet-B4's native 380 deliberately:
+                                # at 256 the diffusion test set (DF40) is NOT upscaled, so
+                                # no extra interpolation enters its FFT spectrum, and we
+                                # match every 256^2 baseline. EfficientNet-B4 runs fine at
+                                # 256 (off its native res). Flip back to 380 only if you
+                                # accept upscaling DF40's crops.
+  # The SAME crop feeds both branches. Any resize/alignment resampling injects
+  # interpolation artifacts into the FFT spectrum, so the extraction/resampling
+  # pipeline is fixed and documented (see notes 1.8 "Extraction" caveat, and the
+  # `preprocess` block below) and the frequency branch consumes a deterministic
+  # transform of this crop.
+  frequency:
+    transform: fft_magnitude    # 2D FFT -> fftshift -> log1p magnitude (frequency-branch input)
+    log_scale: true             # log-compress magnitude before the CNN
+    normalize: per_image        # per-sample normalisation of the spectrum
+    # phase is dropped by default (magnitude-only). A phase-processing variant is
+    # an explicit ablation (notes/delta ABL4), not the default.
+  # Train-time augmentation. CRITICAL frequency-branch exclusion: only LOSSLESS geometry
+  # (horizontal flip — a reflection, no interpolation) is SHARED by both branches;
+  # photometric jitter is applied to the SPATIAL view ONLY, so the FFT magnitude the
+  # frequency branch reads is never contaminated by augmentation artifacts (which would
+  # corrupt the very spectral fingerprint C2 attributes). shared_crop_aug=true is the
+  # ablation that instead lets the spectrum see the jitter too.
+  augmentation:
+    hflip: true                 # shared, lossless, spectrum-safe
+    brightness: 0.1             # spatial-only photometric jitter (+/- fraction)
+    contrast: 0.1               # spatial-only
+    shared_crop_aug: false      # ABLATION: true -> jitter the shared crop (spectrum sees it)
+  frames_per_video_train: 32    # matches DeepfakeBench (32 frames/video); revisit per E1
+  frames_per_video_eval: 32     # eval sampling; video-level metrics reduce over these frames
+  num_workers: 8
+
+# -----------------------------------------------------------------------------
+# Face extraction (one-time, isolated env — runs over FF++, Celeb-DF v2, DFDC ONLY;
+# WildDeepfake and DF40 ship pre-cropped and are NOT extracted). These settings
+# REPLICATE DeepfakeBench's preprocessing so the three extracted datasets match the
+# DF40 crops (made by that exact pipeline) and the 256^2 baselines. Verified from
+# the DeepfakeBench paper and preprocessing/preprocess.py.
+# -----------------------------------------------------------------------------
+preprocess:
+  detector: dlib                # dlib HOG frontal detector (matches DF40; lower recall than
+                                # RetinaFace, hence the missing-face handling below)
+  predictor_path: dlib_tools/shape_predictor_81_face_landmarks.dat  # 81-landmark model (download separately)
+  res: 256                      # output crop size (== data.image_size; one resolution end-to-end)
+  align: true                   # similarity-transform alignment to the ArcFace 5-pt template.
+                                # Set false for the UNALIGNED ablation (loose largest-face crop),
+                                # to test whether frequency saliency reads alignment artifacts.
+  scale: 1.3                    # crop enlarge factor (DeepfakeBench/FF++ convention; margin_rate=0.3)
+  interpolation: linear         # cv2 warpAffine/resize interpolation (DeepfakeBench default = bilinear)
+  border_mode: constant         # out-of-frame fill. DeepfakeBench default = BORDER_CONSTANT (black).
+                                # Kept to MATCH DF40 even though reflect would be gentler on the FFT;
+                                # cross-dataset consistency with the un-redoable DF40 crops wins.
+                                # (A 'reflect' run is available as a frequency-hygiene ablation.)
+  sampling_mode: fixed_num_frames  # 'fixed_num_frames' (uniform N per video) or 'fixed_stride'
+  num_frames: 32                # used when sampling_mode == fixed_num_frames
+  stride: 10                    # used when sampling_mode == fixed_stride
+  min_face_size: 0              # 0 = keep any dlib detection; raise to drop tiny boxes
+  save_landmarks: true          # save the 81 aligned-face landmarks (.npy) per crop
+  save_masks: true              # save aligned binary manipulation masks where provided (FF++) — for E5
+  celebdf_test_list: List_of_testing_videos.txt  # Celeb-DF v2: extract ONLY the official test split
+  dfdc_labels_file: labels.csv  # DFDC test: filename -> REAL/FAKE label source
+
+# -----------------------------------------------------------------------------
+# Training  (FaceForensics++ c23, standard four-manipulation protocol — ONLY)
+# -----------------------------------------------------------------------------
+train:
+  dataset: faceforensics_c23
+  manipulations: [Deepfakes, Face2Face, FaceSwap, NeuralTextures]
+  compression: c23              # TRAIN ON c23 ONLY (never c40/raw for the headline run)
+  epochs: 30                    # starting point; tune from E1 (baselines use 10-20)
+  batch_size: 32
+  amp: true                     # mixed-precision training
+  optimizer:
+    name: adam
+    lr: 2.0e-4                  # EfficientNet-B4 fine-tuning starting LR (cf. SFIAD 2e-4)
+    weight_decay: 1.0e-5
+    backbone_lr_mult: 1.0       # 1.0 = single LR (used by the spatial-only arm). The dual
+                                # configs set 0.1 -> the pretrained backbone fine-tunes 10x
+                                # gentler than the from-scratch frequency branch + fusion + head.
+  scheduler:
+    name: cosine
+    warmup_epochs: 1
+  loss:
+    name: bce                   # binary real/fake; swappable (kept out of the model class)
+  grad_clip_norm: null
+  early_stop_patience: 7        # stop if val frame-AUC hasn't improved for N epochs (so the
+                                # run converges without over/under-fitting). best.pt is selected
+                                # on val AUC; E5 MUST use a best.pt from a full run, not a smoke run.
+
+# -----------------------------------------------------------------------------
+# Evaluation
+# AUC-ROC is the ANCHOR metric: every baseline/target in the results table is in
+# AUC, so AUC is what must be comparable across rows. Accuracy and EER are
+# reported alongside. Report BOTH frame- and video-level; which one anchors the
+# comparison is an OPEN decision settled from the first run (notes 1.10 (a)) —
+# do not silently mix frame-level and video-level numbers in one column.
+# -----------------------------------------------------------------------------
+eval:
+  anchor_metric: auc_roc
+  metrics: [auc_roc, accuracy, eer]
+  granularity: [frame, video]
+  video_reduce: mean            # frame-score -> video-score aggregation (mean of frame probs)
+  datasets:
+    train: faceforensics_c23
+    test:
+      - celebdf_v2              # conventional lab axis
+      - dfdc                    # conventional lab axis (FULL DFDC, not DFDCP)
+      - wilddeepfake            # real-world, internet-collected axis
+      - df40_diffusion          # diffusion subsets, TEST-ONLY (never trained on)
+
+# -----------------------------------------------------------------------------
+# Logging / outputs (everything under out_dir is gitignored)
+# -----------------------------------------------------------------------------
+logging:
+  out_dir: experiments/results
+  tensorboard: true
+  log_every_steps: 50
+  save_best_on: auc_roc         # checkpoint selection metric (on the FF++ val split)

@@ -1,0 +1,15 @@
+# configs/model/spatial_only.yaml — E1 spatial-only ablation arm.
+#
+# Selected via the base <- data <- model config layering. Trains EfficientNet-B4
+# alone (no frequency branch, no fusion), so its cross-dataset AUC is C1's
+# spatial-only reference point (C1's value is judged RELATIVELY: full dual-branch
+# vs this arm on the diffusion subsets).
+model:
+  variant: spatial_only
+  backbone: efficientnet_b4      # timm-native weights -> ImageNet mean/std (NOT 0.5/0.5);
+                                 # must match the data pipeline's normalization.
+  pretrained: true
+  dropout: 0.3                   # head dropout (cf. B4's pretrained drop_rate ~0.4)
+  drop_path_rate: 0.0            # backbone stochastic depth; raise (~0.1-0.2) to regularize
+                                 # for the FF++ -> cross-dataset generalization gap
+  num_classes: 1                 # single logit -> BCEWithLogitsLoss (base.yaml loss: bce)

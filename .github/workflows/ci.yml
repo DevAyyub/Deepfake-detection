@@ -1,0 +1,30 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      # No torch here on purpose: it's a large install and the logic tests run
+      # against the conftest stub. The numeric (needs_real_torch) tests skip in
+      # this job. To get numeric coverage too, add a second job that does
+      # `pip install -r requirements.txt` (CPU torch) before pytest.
+      - name: Install test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+
+      - name: Syntax check (every module compiles)
+        run: python -m compileall src scripts tests
+
+      - name: Run tests
+        run: pytest
