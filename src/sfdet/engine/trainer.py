@@ -111,7 +111,8 @@ def build_scheduler(optimizer, cfg: dict, steps_per_epoch: int, epochs: int):
 # --------------------------------------------------------------------------- #
 def train_one_epoch(model, loader, criterion, optimizer, scheduler, scaler, device, *,
                     amp_enabled: bool, grad_clip=None, log_interval: int = 50,
-                    max_batches=None, epoch: int = 0, forward_fn=None) -> float:
+                    max_batches=None, epoch: int = 0, forward_fn=None,
+                    aux_weight: float = 0.0) -> float:
     # forward_fn(model, batch) -> logits [B]; defaults to spatial-only so existing
     # single-input callers are unaffected. The dual model passes a (spatial, frequency)
     # adapter (see sfdet.models.factory.build_model).
@@ -129,7 +130,11 @@ def train_one_epoch(model, loader, criterion, optimizer, scheduler, scaler, devi
         optimizer.zero_grad(set_to_none=True)
         with autocast(device_type=dev_type, dtype=torch.float16, enabled=amp_enabled):
             logits = forward_fn(model, batch)     # [B] — adapter pulls this variant's inputs
-            loss = criterion(logits, y)
+            if isinstance(logits, tuple):                 # (logits, aux_logits) when the model has
+                logits, aux_logits = logits               # a training-time aux head (Route-1 B)
+                loss = criterion(logits, y) + aux_weight * criterion(aux_logits, y)
+            else:
+                loss = criterion(logits, y)
         scaler.scale(loss).backward()
         if grad_clip:
             scaler.unscale_(optimizer)
@@ -214,6 +219,7 @@ def fit(model, train_loader, val_loader, cfg: dict, device, *, out_dir=None,
     amp_enabled = bool(train_cfg.get("amp", True)) and device.type == "cuda"
     grad_clip = train_cfg.get("grad_clip_norm", None)
     patience = train_cfg.get("early_stop_patience", None)
+    aux_weight = float(train_cfg.get("aux_loss_weight", 0.0))   # Route-1 B: frequency aux-loss weight
 
     out_dir = Path(out_dir or log_cfg.get("out_dir", "experiments/results"))
     run_name = run_name or f"spatial_only_{time.strftime('%Y%m%d_%H%M%S')}"
@@ -253,7 +259,8 @@ def fit(model, train_loader, val_loader, cfg: dict, device, *, out_dir=None,
         train_loss = train_one_epoch(
             model, train_loader, criterion, optimizer, scheduler, scaler, device,
             amp_enabled=amp_enabled, grad_clip=grad_clip,
-            max_batches=max_train_batches, epoch=epoch, forward_fn=forward_fn)
+            max_batches=max_train_batches, epoch=epoch, forward_fn=forward_fn,
+            aux_weight=aux_weight)
         val = evaluate(model, val_loader, criterion, device,
                        amp_enabled=amp_enabled, max_batches=max_val_batches,
                        forward_fn=forward_fn)

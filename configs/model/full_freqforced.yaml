@@ -1,0 +1,22 @@
+# configs/model/full_freqforced.yaml - Route 1: make the frequency branch load-bearing.
+model:
+  variant: full
+  backbone: efficientnet_b4
+  pretrained: true
+  dropout: 0.3
+  drop_path_rate: 0.1
+  num_classes: 1
+  freq_coords: polar
+  freq_radial_coord: true
+  head_includes_spatial: false
+  fusion:
+    d_model: 512
+    n_heads: 8
+    ffn_ratio: 4
+    dropout: 0.1
+    n_blocks: 1
+    residual_scale: 0.5
+train:
+  optimizer:
+    backbone_lr_mult: 0.1
+  aux_loss_weight: 0.3

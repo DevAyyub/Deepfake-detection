@@ -34,8 +34,10 @@ class _FusionBlock(nn.Module):
     """One pre-norm cross-attention block: LN -> MHA(q; kv) -> +res -> LN -> FFN -> +res.
     `q` is the evolving query stream; `kv` is the fixed frequency key/value stream."""
 
-    def __init__(self, d_model: int, n_heads: int, ffn_ratio: int, dropout: float):
+    def __init__(self, d_model: int, n_heads: int, ffn_ratio: int, dropout: float,
+                 residual_scale: float = 1.0):
         super().__init__()
+        self.residual_scale = float(residual_scale)   # <1 handicaps the spatial query residual (Route-1 gate C)
         self.norm_q = nn.LayerNorm(d_model)
         self.norm_kv = nn.LayerNorm(d_model)
         self.attn = nn.MultiheadAttention(d_model, n_heads, dropout=dropout, batch_first=True)
@@ -53,7 +55,7 @@ class _FusionBlock(nn.Module):
         kv_n = self.norm_kv(kv)
         attn_out, attn_w = self.attn(q_n, kv_n, kv_n, need_weights=need_weights,
                                      average_attn_weights=False)
-        q = q + self.dropout(attn_out)                       # residual carries spatial content
+        q = self.residual_scale * q + self.dropout(attn_out)                       # residual carries spatial content
         q = q + self.dropout(self.ffn(self.norm_ffn(q)))
         return q, attn_w
 
@@ -73,7 +75,7 @@ class CrossAttentionFusion(nn.Module):
     def __init__(self, spatial_channels: int = 1792, freq_channels: int = 256,
                  spatial_hw=(8, 8), freq_hw=(16, 16), d_model: int = 512, n_heads: int = 8,
                  ffn_ratio: int = 4, dropout: float = 0.1, n_blocks: int = 1,
-                 return_attn: bool = False):
+                 return_attn: bool = False, residual_scale: float = 1.0):
         super().__init__()
         self.d_model = d_model
         self.out_dim = d_model
@@ -90,7 +92,8 @@ class CrossAttentionFusion(nn.Module):
         self.kv_pos = nn.Parameter(torch.zeros(1, n_kv, d_model))
 
         self.blocks = nn.ModuleList(
-            [_FusionBlock(d_model, n_heads, ffn_ratio, dropout) for _ in range(n_blocks)])
+            [_FusionBlock(d_model, n_heads, ffn_ratio, dropout, residual_scale=residual_scale)
+             for _ in range(n_blocks)])
         self._init_weights()
 
     def _init_weights(self):
@@ -151,6 +154,7 @@ def build_fusion(cfg: dict, *, spatial_channels: int = 1792, freq_channels: int 
         ffn_ratio=int(f.get("ffn_ratio", 4)), dropout=float(f.get("dropout", 0.1)),
         n_blocks=int(f.get("n_blocks", 1)),                 # ABL2: stack > 1
         return_attn=bool(f.get("return_attn", False)),
+        residual_scale=float(f.get("residual_scale", 1.0)),  # Route-1 gate; 1.0 = unchanged
     )
 
 

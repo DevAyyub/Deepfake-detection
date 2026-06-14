@@ -34,17 +34,35 @@ from sfdet.models.fusion import build_fusion, build_head
 from sfdet.explain.explainability import DualExplainer, FrequencyExplainer, SpatialExplainer
 
 
+class _AuxFreqHead(nn.Module):
+    """Training-time-only auxiliary classifier on the PRE-FUSION frequency tap (GAP -> Linear).
+    Keeps the frequency branch class-discriminative so the gated fusion has real spectral signal
+    to draw on. DISCARDED at inference: C2's saliency is still d(main logit)/d(tap) computed INSIDE
+    the fused detector over its own frequency features, NOT this head (the categorical edge over
+    DF-P2E is preserved)."""
+
+    def __init__(self, freq_channels: int = 256, dropout: float = 0.3):
+        super().__init__()
+        self.drop = nn.Dropout(dropout)
+        self.fc = nn.Linear(freq_channels, 1)
+
+    def forward(self, freq_feat):
+        x = freq_feat.flatten(2).mean(-1)              # GAP over the (rho, theta) tap -> [B, C]
+        return self.fc(self.drop(x)).squeeze(-1)        # [B]
+
+
 class DeepfakeDetector(nn.Module):
     """Dual spatial-frequency detector: two modality-pure branches meeting at ONE single-stage
     cross-attention fusion block, then a single-logit head. Exposes `.spatial_branch` /
     `.frequency_branch` so the explainers resolve each PRE-FUSION Grad-CAM target."""
 
-    def __init__(self, spatial_branch, frequency_branch, fusion, head):
+    def __init__(self, spatial_branch, frequency_branch, fusion, head, aux_head=None):
         super().__init__()
         self.spatial_branch = spatial_branch
         self.frequency_branch = frequency_branch
         self.fusion = fusion
         self.head = head
+        self.aux_head = aux_head        # optional training-time frequency aux head (Route-1 B); None = off
 
     # --- the pre-fusion saliency targets (stable handles the explainers resolve) ---
     @property
@@ -67,7 +85,11 @@ class DeepfakeDetector(nn.Module):
         else:
             pooled, attn = self.fusion(spatial_feat, freq_feat), None  # [B,512]
         logits = self.head(pooled, spatial_feat)                 # [B]  (head ignores spatial_feat
-        return (logits, attn) if return_attn else logits          #       unless include_spatial=True)
+        if return_attn:
+            return logits, attn
+        if self.training and self.aux_head is not None:   # training-only freq aux logit (Route-1 B)
+            return logits, self.aux_head(freq_feat)
+        return logits          #       unless include_spatial=True)
 
     # --- integrated explainability (per-sample maps from the detector's own fake logit) ---
     def explain(self, spatial, frequency, normalize: bool = True):
@@ -101,7 +123,10 @@ def build_detector(cfg: dict) -> DeepfakeDetector:
                           freq_channels=frequency.out_channels,
                           spatial_hw=spatial_hw, freq_hw=frequency.tap_hw)
     head = build_head(cfg, d_model=fusion.out_dim, spatial_channels=spatial.out_channels)
-    return DeepfakeDetector(spatial, frequency, fusion, head)
+    aux_w = float(((cfg or {}).get("train", {}) or {}).get("aux_loss_weight", 0.0))
+    aux_head = (_AuxFreqHead(freq_channels=frequency.out_channels, dropout=float(m.get("dropout", 0.3)))
+                if aux_w > 0.0 else None)            # built only when the aux loss is on (Route-1 B)
+    return DeepfakeDetector(spatial, frequency, fusion, head, aux_head=aux_head)
 
 
 def _selftest():
